@@ -1,0 +1,10 @@
+# 场景3：WAR 冲突 + RAW 混合
+# add.d 读 $f2 旧值 → 流出时 Vj/Vk 直接取到值
+# mul.d 覆盖 $f2 寄存器状态 → WAR 通过寄存器重命名解决
+# 第二条 add.d 等待新 $f2 → RAW 正常处理
+l.d   $f0, 0(R1)
+l.d   $f2, 8(R1)
+l.d   $f4, 16(R1)
+add.d $f8, $f0, $f2
+mul.d $f2, $f0, $f4
+add.d $f10, $f2, $f8

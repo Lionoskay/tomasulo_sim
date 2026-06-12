@@ -1,0 +1,9 @@
+# 场景2：RAW 冲突
+# mul.d 需等 l.d 完成（Load-Use 依赖）
+# add.d 需等 mul.d 完成写 $f4（RAW）
+# 验证保留站 Qj/Qk 正确标记，CDB 广播解除等待
+l.d   $f0, 0(R1)
+l.d   $f2, 8(R1)
+mul.d $f4, $f0, $f2
+add.d $f6, $f4, $f2
+s.d   $f6, 16(R1)

@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tomasulo 动态调度模拟器</title>
+<style>
+/* ── 浅色主题基础 ── */
+:root {
+    --bg: #ffffff;
+    --bg-panel: #f8f9fa;
+    --border: #d0d5db;
+    --text: #1a1a2e;
+    --text-secondary: #6b7280;
+    --blue: #3b82f6;
+    --blue-bg: #eff6ff;
+    --green: #10b981;
+    --green-bg: #ecfdf5;
+    --orange: #f59e0b;
+    --orange-bg: #fffbeb;
+    --red: #ef4444;
+    --red-bg: #fef2f2;
+    --yellow-bg: #fefce8;
+    --gray-bg: #f3f4f6;
+    --radius: 6px;
+    --shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #e8ecf1;
+    color: var(--text);
+    min-height: 100vh;
+}
+.header {
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.header h1 { font-size: 20px; font-weight: 600; }
+.header .subtitle { font-size: 13px; color: var(--text-secondary); }
+
+/* ── 布局 ── */
+.layout {
+    display: flex;
+    height: calc(100vh - 100px);
+    gap: 0;
+}
+.panel-left {
+    width: 320px;
+    min-width: 320px;
+    background: var(--bg);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+.panel-right {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+/* ── 卡片 ── */
+.card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+}
+.card-header {
+    padding: 8px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-panel);
+    border-radius: var(--radius) var(--radius) 0 0;
+}
+.card-body { padding: 10px 12px; }
+
+/* ── 表格 ── */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+th, td {
+    padding: 5px 8px;
+    border: 1px solid #e5e7eb;
+    text-align: center;
+    white-space: nowrap;
+}
+th {
+    background: #f3f4f6;
+    font-weight: 600;
+    color: var(--text-secondary);
+    font-size: 11px;
+}
+td { color: var(--text); }
+
+/* ── 状态颜色 ── */
+.row-issue { background: #fefce8; }       /* Issue: 淡黄 */
+.row-execute { background: #fff7ed; }      /* Execute: 淡橙 */
+.row-write { background: #ecfdf5; }        /* Write Result: 淡绿 */
+.row-done { opacity: 0.45; color: #9ca3af; }
+.busy-row { background: #eff6ff; }          /* Busy: 淡蓝 */
+.q-waiting { background: #fff7ed; color: #ea580c; font-weight: 600; }  /* Qj/Qk 等待中 */
+.flash-green { animation: flashG 0.6s; }
+.flash-yellow { animation: flashY 0.6s; }
+@keyframes flashG { 50% { background: #6ee7b7; } }
+@keyframes flashY { 50% { background: #fde68a; } }
+
+/* ── 表单 ── */
+textarea {
+    width: 100%;
+    font-family: "SF Mono", "Monaco", "Menlo", monospace;
+    font-size: 12px;
+    padding: 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    resize: vertical;
+    background: var(--bg);
+    color: var(--text);
+}
+input[type="number"], select {
+    padding: 4px 8px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 12px;
+    width: 70px;
+    background: var(--bg);
+    color: var(--text);
+}
+.btn {
+    padding: 6px 14px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    background: var(--bg);
+    color: var(--text);
+    transition: all 0.15s;
+}
+.btn:hover { background: #f3f4f6; }
+.btn-primary { background: var(--blue); color: #fff; border-color: var(--blue); }
+.btn-primary:hover { background: #2563eb; }
+.btn-success { background: var(--green); color: #fff; border-color: var(--green); }
+.btn-success:hover { background: #059669; }
+.btn-danger { background: var(--red); color: #fff; border-color: var(--red); }
+.btn-danger:hover { background: #dc2626; }
+.btn-sm { padding: 3px 10px; font-size: 11px; }
+.btn-group { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* ── 状态栏 ── */
+.status-bar {
+    background: var(--bg);
+    border-top: 1px solid var(--border);
+    padding: 8px 24px;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+.status-dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    margin-right: 4px;
+}
+.status-running { background: var(--green); }
+.status-paused { background: #f59e0b; }
+.status-done { background: var(--blue); }
+
+/* ── 事件日志 ── */
+.event-log {
+    max-height: 130px;
+    overflow-y: auto;
+    font-family: "SF Mono", "Monaco", "Menlo", monospace;
+    font-size: 11px;
+    line-height: 1.6;
+}
+.event-issue { color: var(--blue); }
+.event-execute { color: var(--orange); }
+.event-cdb { color: var(--green); }
+.event-stall { color: var(--red); }
+
+/* ── 标签 ── */
+.tag {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+}
+.tag-blue { background: var(--blue-bg); color: var(--blue); }
+.tag-green { background: var(--green-bg); color: var(--green); }
+
+/* ── 延迟设置行 ── */
+.latency-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 3px 0;
+    font-size: 12px;
+}
+.latency-row label { color: var(--text-secondary); }
+.latency-row input { width: 60px; }
+
+/* ── 消息提示 ── */
+.msg { font-size: 12px; padding: 4px 8px; border-radius: 4px; }
+.msg-success { background: var(--green-bg); color: #059669; }
+.msg-error { background: var(--red-bg); color: #dc2626; }
+
+/* ── 滑动条 ── */
+.speed-slider {
+    width: 100%;
+    margin: 4px 0;
+}
+
+/* 寄存器转置表 */
+.reg-table th:first-child, .reg-table td:first-child {
+    font-weight: 600;
+    color: var(--text-secondary);
+    background: #f9fafb;
+}
+
+/* 已完成的指令行 */
+.inst-done td {
+    color: #9ca3af !important;
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+    <div>
+        <h1>Tomasulo 动态调度模拟器</h1>
+        <span class="subtitle">MIPS 浮点指令子集 | Issue → Execute → Write Result | CDB 广播</span>
+    </div>
+</div>
+
+<div class="layout">
+    <!-- ═══ 左侧：设置面板 ═══ -->
+    <div class="panel-left">
+
+        <!-- 指令输入 -->
+        <div class="card">
+            <div class="card-header">指令输入</div>
+            <div class="card-body">
+                <div class="btn-group" style="margin-bottom:8px;">
+                    <input type="file" id="file-input" accept=".txt" style="display:none" onchange="handleFileSelect(event)">
+                    <button class="btn btn-sm" onclick="document.getElementById('file-input').click()">选择文件</button>
+                    <select id="preset-select" style="width:auto;" onchange="loadPreset()">
+                        <option value="">预设程序 ▼</option>
+                        <option value="no_conflict.txt">场景1: 无冲突</option>
+                        <option value="raw_conflict.txt">场景2: RAW冲突</option>
+                        <option value="war_conflict.txt">场景3: WAR+RAW冲突</option>
+                    </select>
+                </div>
+                <textarea id="code-input" rows="8" placeholder="输入指令...&#10;l.d   $f0, 0($1)&#10;l.d   $f2, 8($1)&#10;add.d $f4, $f0, $f2"></textarea>
+                <div id="code-msg" style="margin-top:6px;"></div>
+                <div class="btn-group" style="margin-top:8px;">
+                    <button class="btn btn-primary" onclick="loadProgram()">载入</button>
+                    <button class="btn" onclick="clearCode()">清空</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 功能部件延迟设置 -->
+        <div class="card">
+            <div class="card-header">功能部件延迟设置</div>
+            <div class="card-body">
+                <div class="latency-row"><label>Load:</label> <input type="number" id="lat-load" value="2" min="1"></div>
+                <div class="latency-row"><label>Store:</label> <input type="number" id="lat-store" value="1" min="1"></div>
+                <div class="latency-row"><label>ADD:</label> <input type="number" id="lat-add" value="2" min="1"></div>
+                <div class="latency-row"><label>SUB:</label> <input type="number" id="lat-sub" value="2" min="1"></div>
+                <div class="latency-row"><label>MUL:</label> <input type="number" id="lat-mul" value="10" min="1"></div>
+                <div class="latency-row"><label>DIV:</label> <input type="number" id="lat-div" value="40" min="1"></div>
+            </div>
+        </div>
+
+        <!-- 运行控制 -->
+        <div class="card">
+            <div class="card-header">运行控制</div>
+            <div class="card-body">
+                <div class="btn-group" style="margin-bottom:8px;">
+                    <button class="btn btn-primary" onclick="step(1)" title="单步执行 (Space)">单步</button>
+                    <button class="btn" onclick="stepBack()" title="回退一个周期 (←)">← 回退</button>
+                    <button class="btn btn-success" id="btn-run" onclick="run()" title="连续运行 (R)">▶ 运行</button>
+                    <button class="btn btn-danger" id="btn-pause" onclick="pause()" title="暂停 (P)">暂停</button>
+                    <button class="btn" onclick="resetSim()" title="重置">↺ 重置</button>
+                </div>
+                <div style="font-size:12px; color:var(--text-secondary); margin-bottom:4px;">
+                    速度: <span id="speed-value">500ms</span>
+                </div>
+                <input type="range" class="speed-slider" id="speed-slider" min="100" max="2000" value="500" step="100" oninput="updateSpeed(this.value)">
+            </div>
+        </div>
+
+        <!-- 周期跳转 -->
+        <div class="card">
+            <div class="card-header">周期跳转</div>
+            <div class="card-body">
+                <div style="display:flex; gap:6px; align-items:center;">
+                    <span style="font-size:12px;">跳转到周期:</span>
+                    <input type="number" id="jump-cycle" value="1" min="1" style="width:60px;">
+                    <button class="btn btn-sm" onclick="jumpToCycle()">跳转</button>
+                    <button class="btn btn-sm" onclick="backToLive()">回到最新</button>
+                </div>
+                <div style="margin-top:4px; font-size:11px; color:var(--text-secondary);">
+                    最大历史周期: <span id="max-cycle">0</span>
+                    <span id="history-indicator" style="display:none; color:var(--orange);"> (历史回看模式)</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══ 右侧：执行状态面板 ═══ -->
+    <div class="panel-right">
+
+        <!-- 指令状态表 -->
+        <div class="card">
+            <div class="card-header">指令状态表</div>
+            <div class="card-body" style="overflow-x:auto;">
+                <table id="inst-table">
+                    <thead>
+                        <tr>
+                            <th>地址</th>
+                            <th>指令</th>
+                            <th>Issue</th>
+                            <th>执行开始</th>
+                            <th>执行结束</th>
+                            <th>写结果</th>
+                            <th>完成</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Load/Store 部件状态表 -->
+        <div class="card">
+            <div class="card-header">Load/Store 部件状态表</div>
+            <div class="card-body" style="overflow-x:auto;">
+                <table id="ls-table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Busy</th>
+                            <th>Op</th>
+                            <th>有效地址</th>
+                            <th>值</th>
+                            <th>剩余周期</th>
+                            <th>目标寄存器</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 保留站状态表 -->
+        <div class="card">
+            <div class="card-header">保留站状态表</div>
+            <div class="card-body" style="overflow-x:auto;">
+                <table id="rs-table">
+                    <thead>
+                        <tr>
+                            <th>剩余周期</th>
+                            <th>Name</th>
+                            <th>Busy</th>
+                            <th>Op</th>
+                            <th>Vj</th>
+                            <th>Vk</th>
+                            <th>Qj</th>
+                            <th>Qk</th>
+                            <th>目标寄存器</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 寄存器状态表（转置布局） -->
+        <div class="card">
+            <div class="card-header">寄存器状态表 (F0–F30)</div>
+            <div class="card-body" style="overflow-x:auto;">
+                <table id="reg-table" class="reg-table">
+                    <thead></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 事件日志 -->
+        <div class="card">
+            <div class="card-header">事件日志</div>
+            <div class="card-body event-log" id="event-log">
+                <span style="color:var(--text-secondary);">尚未加载程序。</span>
+            </div>
+        </div>
+
+        <!-- 性能统计 -->
+        <div class="card" style="margin-bottom: 0;">
+            <div class="card-header">性能统计</div>
+            <div class="card-body" style="font-size:12px;">
+                <span>总周期: <strong id="stat-cycles">0</strong></span> &nbsp;|&nbsp;
+                <span>完成: <strong id="stat-completed">0</strong></span> &nbsp;|&nbsp;
+                <span>RAW等待: <strong id="stat-raw">0</strong></span> &nbsp;|&nbsp;
+                <span>结构冲突: <strong id="stat-struct">0</strong></span> &nbsp;|&nbsp;
+                <span>CPI: <strong id="stat-cpi">-</strong></span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 状态栏 -->
+<div class="status-bar">
+    <span>当前周期: <strong id="bar-cycle">0</strong></span>
+    <span>
+        <span class="status-dot status-paused" id="bar-dot"></span>
+        <span id="bar-status">○ 已暂停</span>
+    </span>
+</div>
+
+<script>
+// ── 全局状态 ──
+let state = null;
+let historyMode = false;
+let speedMs = 500;
+let runTimer = null;
+
+// ── API 封装 ──
+async function api(method, path, body) {
+    const opts = {
+        method,
+        headers: body ? {'Content-Type': 'application/json'} : {},
+    };
+    if (body) opts.body = JSON.stringify(body);
+    const res = await fetch(path, opts);
+    return res.json();
+}
+
+async function refresh() {
+    state = await api('GET', '/api/state');
+    historyMode = false;
+    document.getElementById('history-indicator').style.display = 'none';
+    renderAll();
+}
+
+async function step(cycles = 1) {
+    if (historyMode) {
+        // 在历史回看模式中：优先从历史快照前进
+        const targetCycle = (state.cycle || 0) + 1;
+        const res = await fetch('/api/history', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({cycle: targetCycle}),
+        });
+        if (res.ok) {
+            state = await res.json();
+            document.getElementById('jump-cycle').value = targetCycle;
+            // 检查是否已到达最新周期：向后再探一个周期看是否存在
+            const nextRes = await fetch('/api/history', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({cycle: targetCycle + 1}),
+            });
+            if (!nextRes.ok) {
+                // 没有更新的历史，已回到实时
+                historyMode = false;
+                document.getElementById('history-indicator').style.display = 'none';
+            }
+            renderAll();
+            return;
+        }
+    }
+    // 不在历史模式，或已在最新周期：真实推进引擎
+    state = await api('POST', '/api/step', {cycles});
+    historyMode = false;
+    document.getElementById('history-indicator').style.display = 'none';
+    renderAll();
+}
+
+async function loadProgram() {
+    const code = document.getElementById('code-input').value;
+    const latencies = {
+        load: parseInt(document.getElementById('lat-load').value) || 2,
+        store: parseInt(document.getElementById('lat-store').value) || 1,
+        add: parseInt(document.getElementById('lat-add').value) || 2,
+        sub: parseInt(document.getElementById('lat-sub').value) || 2,
+        mul: parseInt(document.getElementById('lat-mul').value) || 10,
+        div: parseInt(document.getElementById('lat-div').value) || 40,
+    };
+    const res = await fetch('/api/load', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({code, latencies}),
+    });
+    if (!res.ok) {
+        const err = await res.json();
+        const msgDiv = document.getElementById('code-msg');
+        msgDiv.innerHTML = `<span class="msg msg-error">${err.error || '加载失败'}</span>`;
+        return;
+    }
+    state = await res.json();
+    document.getElementById('code-msg').innerHTML = `<span class="msg msg-success">✓ 已加载 ${state.instructions.length} 条指令</span>`;
+    document.getElementById('jump-cycle').max = 0;
+    document.getElementById('max-cycle').textContent = '0';
+    historyMode = false;
+    renderAll();
+}
+
+function clearCode() {
+    document.getElementById('code-input').value = '';
+    document.getElementById('code-msg').innerHTML = '';
+}
+
+async function handleFileSelect(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const text = await file.text();
+    document.getElementById('code-input').value = text;
+    document.getElementById('file-input').value = '';
+}
+
+async function loadPreset() {
+    const sel = document.getElementById('preset-select');
+    if (!sel.value) return;
+    const res = await fetch('/test_programs/' + sel.value);
+    if (res.ok) {
+        const text = await res.text();
+        document.getElementById('code-input').value = text;
+    }
+    sel.value = '';
+}
+
+async function jumpToCycle() {
+    const cycle = parseInt(document.getElementById('jump-cycle').value);
+    if (!cycle || cycle < 1) return;
+    const res = await fetch('/api/history', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({cycle}),
+    });
+    if (!res.ok) {
+        alert('无效的周期号');
+        return;
+    }
+    state = await res.json();
+    historyMode = true;
+    document.getElementById('history-indicator').style.display = 'inline';
+    renderAll();
+}
+
+async function backToLive() {
+    await refresh();
+}
+
+async function stepBack() {
+    const targetCycle = (state.cycle || 1) - 1;
+    if (targetCycle < 1) return;
+    const res = await fetch('/api/history', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({cycle: targetCycle}),
+    });
+    if (!res.ok) return;
+    state = await res.json();
+    historyMode = true;
+    document.getElementById('history-indicator').style.display = 'inline';
+    document.getElementById('jump-cycle').value = targetCycle;
+    renderAll();
+}
+
+async function run() {
+    await api('POST', '/api/run');
+    runTimer = setInterval(async () => {
+        const s = await api('GET', '/api/state');
+        state = s;
+        renderAll();
+        if (!state.running || state.done) {
+            clearInterval(runTimer);
+            runTimer = null;
+        }
+    }, speedMs);
+}
+
+async function pause() {
+    await api('POST', '/api/pause');
+    if (runTimer) { clearInterval(runTimer); runTimer = null; }
+    await refresh();
+}
+
+async function resetSim() {
+    if (runTimer) { clearInterval(runTimer); runTimer = null; }
+    state = await api('POST', '/api/reset');
+    historyMode = false;
+    renderAll();
+}
+
+function updateSpeed(val) {
+    speedMs = parseInt(val);
+    document.getElementById('speed-value').textContent = speedMs + 'ms';
+    if (runTimer) {
+        clearInterval(runTimer);
+        runTimer = setInterval(async () => {
+            const s = await api('GET', '/api/state');
+            state = s;
+            renderAll();
+            if (!state.running || state.done) {
+                clearInterval(runTimer);
+                runTimer = null;
+            }
+        }, speedMs);
+    }
+}
+
+// ── 渲染引擎 ──
+
+function renderAll() {
+    if (!state) return;
+    renderInstTable();
+    renderLSTable();
+    renderRSTable();
+    renderRegTable();
+    renderEvents();
+    renderStats();
+    renderStatusBar();
+    document.getElementById('max-cycle').textContent = state.max_history_cycle || 0;
+    document.getElementById('jump-cycle').max = state.max_history_cycle || 0;
+}
+
+// ── 指令状态表 ──
+
+function renderInstTable() {
+    const tbody = document.querySelector('#inst-table tbody');
+    tbody.innerHTML = '';
+    (state.instruction_status || []).forEach(inst => {
+        const tr = document.createElement('tr');
+        let rowClass = '';
+        if (inst.done) {
+            rowClass = 'row-done';
+        } else if (inst.write_result === state.cycle && inst.write_result) {
+            rowClass = 'row-write';
+        } else if (inst.execute_start && !inst.execute_end) {
+            rowClass = 'row-execute';
+        } else if (inst.issue && !inst.done) {
+            rowClass = 'row-issue';
+        }
+
+        const addrHex = '0x' + inst.addr.toString(16).padStart(2, '0');
+        tr.innerHTML = `
+            <td>${addrHex}</td>
+            <td style="text-align:left; font-family:monospace;">${esc(inst.text)}</td>
+            <td>${inst.issue || '—'}</td>
+            <td>${inst.execute_start || '—'}</td>
+            <td>${inst.execute_end || '—'}</td>
+            <td>${inst.write_result || '—'}</td>
+            <td>${inst.done ? '✓' : '—'}</td>
+        `;
+        if (inst.done) tr.classList.add('inst-done');
+        else if (rowClass) tr.classList.add(rowClass);
+        tbody.appendChild(tr);
+    });
+}
+
+// ── Load/Store 部件状态表 ──
+
+function renderLSTable() {
+    const tbody = document.querySelector('#ls-table tbody');
+    tbody.innerHTML = '';
+    (state.loadstore_buffers || []).forEach(buf => {
+        const tr = document.createElement('tr');
+        if (buf.busy) tr.classList.add('busy-row');
+        let valDisplay = '—';
+        if (buf.value != null) {
+            if (typeof buf.value === 'string') {
+                valDisplay = buf.value;
+            } else {
+                valDisplay = parseFloat(buf.value).toFixed(2);
+            }
+        }
+        tr.innerHTML = `
+            <td>${buf.name}</td>
+            <td>${buf.busy ? 'Y' : 'N'}</td>
+            <td>${buf.op || '—'}</td>
+            <td style="font-family:monospace;">${buf.address || '—'}</td>
+            <td style="font-family:monospace;">${valDisplay}</td>
+            <td>${buf.remaining}</td>
+            <td>${buf.dest || '—'}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+// ── 保留站状态表 ──
+
+function renderRSTable() {
+    const tbody = document.querySelector('#rs-table tbody');
+    tbody.innerHTML = '';
+    const allRS = [
+        ...(state.reservation_stations?.fp_add || []),
+        ...(state.reservation_stations?.fp_mul || []),
+    ];
+    allRS.forEach(rs => {
+        const tr = document.createElement('tr');
+        if (rs.busy) tr.classList.add('busy-row');
+        const vj = formatVal(rs.vj);
+        const vk = formatVal(rs.vk);
+        const qjHtml = rs.qj ? `<span class="q-waiting">${rs.qj}</span>` : '—';
+        const qkHtml = rs.qk ? `<span class="q-waiting">${rs.qk}</span>` : '—';
+        tr.innerHTML = `
+            <td>${rs.remaining}</td>
+            <td>${rs.name}</td>
+            <td>${rs.busy ? 'Y' : 'N'}</td>
+            <td>${rs.op || '—'}</td>
+            <td>${vj}</td>
+            <td>${vk}</td>
+            <td>${qjHtml}</td>
+            <td>${qkHtml}</td>
+            <td>${rs.dest || '—'}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+// ── 寄存器状态表（转置 3 行 × 17 列） ──
+
+function renderRegTable() {
+    const thead = document.querySelector('#reg-table thead');
+    const tbody = document.querySelector('#reg-table tbody');
+    thead.innerHTML = '';
+    tbody.innerHTML = '';
+
+    const regs = ['f0','f2','f4','f6','f8','f10','f12','f14','f16','f18','f20','f22','f24','f26','f28','f30'];
+    const status = state.register_status || {};
+
+    // 表头：寄存器名
+    let headRow = '<tr><th></th>';
+    regs.forEach(r => { headRow += `<th>$${r}</th>`; });
+    headRow += '</tr>';
+    thead.innerHTML = headRow;
+
+    // 第 2 行：Qi
+    let qiRow = '<tr><td><strong>Qi</strong></td>';
+    regs.forEach(r => {
+        const st = status[r] || {};
+        const qi = st.qi || null;
+        qiRow += qi
+            ? `<td><span class="tag tag-blue">${qi}</span></td>`
+            : `<td style="color:#9ca3af;">—</td>`;
+    });
+    qiRow += '</tr>';
+
+    // 第 3 行：值
+    let valRow = '<tr><td><strong>值</strong></td>';
+    regs.forEach(r => {
+        const st = status[r] || {};
+        const qi = st.qi || null;
+        const val = st.value;
+        if (qi) {
+            valRow += `<td style="color:#9ca3af;">—</td>`;
+        } else if (val != null) {
+            valRow += `<td>${formatVal(val)}</td>`;
+        } else {
+            valRow += `<td style="color:#9ca3af;">—</td>`;
+        }
+    });
+    valRow += '</tr>';
+
+    tbody.innerHTML = qiRow + valRow;
+}
+
+// ── 事件日志 ──
+
+function renderEvents() {
+    const el = document.getElementById('event-log');
+    const events = state.events || [];
+    if (events.length === 0) {
+        el.innerHTML = '<span style="color:var(--text-secondary);">暂无事件。</span>';
+        return;
+    }
+    el.innerHTML = events.map(ev => {
+        let cls = '';
+        if (ev.includes('Issue')) cls = 'event-issue';
+        else if (ev.includes('Execute')) cls = 'event-execute';
+        else if (ev.includes('CDB') || ev.includes('Store:')) cls = 'event-cdb';
+        else if (ev.includes('Stall')) cls = 'event-stall';
+        else cls = 'event-cdb';
+        return `<div class="${cls}">${esc(ev)}</div>`;
+    }).join('');
+    el.scrollTop = el.scrollHeight;
+}
+
+// ── 性能统计 ──
+
+function renderStats() {
+    const st = state.stats || {};
+    document.getElementById('stat-cycles').textContent = st.total_cycles || 0;
+    document.getElementById('stat-completed').textContent = st.completed_instructions || 0;
+    document.getElementById('stat-raw').textContent = st.raw_stalls || 0;
+    document.getElementById('stat-struct').textContent = st.structural_stalls || 0;
+    document.getElementById('stat-cpi').textContent = st.cpi != null ? st.cpi.toFixed(1) : '-';
+}
+
+// ── 状态栏 ──
+
+function renderStatusBar() {
+    document.getElementById('bar-cycle').textContent = state.cycle || 0;
+    const dot = document.getElementById('bar-dot');
+    const statusText = document.getElementById('bar-status');
+    if (state.done) {
+        dot.className = 'status-dot status-done';
+        statusText.textContent = '✓ 执行完毕';
+    } else if (state.running) {
+        dot.className = 'status-dot status-running';
+        statusText.textContent = '● 运行中';
+    } else {
+        dot.className = 'status-dot status-paused';
+        statusText.textContent = '○ 已暂停';
+    }
+}
+
+// ── 工具函数 ──
+
+function formatVal(v) {
+    if (v == null) return '—';
+    if (typeof v === 'string') return v;
+    return parseFloat(v).toFixed(2);
+}
+
+function esc(s) {
+    const el = document.createElement('span');
+    el.textContent = s;
+    return el.innerHTML;
+}
+
+// ── 快捷键 ──
+
+document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+    if (e.key === ' ') { e.preventDefault(); step(1); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); stepBack(); }
+    else if (e.key === 'r' || e.key === 'R') { run(); }
+    else if (e.key === 'p' || e.key === 'P') { pause(); }
+    else if (e.key === '+' || e.key === '=') { updateSpeed(Math.min(2000, speedMs + 100)); document.getElementById('speed-slider').value = speedMs; }
+    else if (e.key === '-') { updateSpeed(Math.max(100, speedMs - 100)); document.getElementById('speed-slider').value = speedMs; }
+});
+
+// ── 初始化 ──
+
+refresh();
+</script>
+</body>
+</html>

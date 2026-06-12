@@ -1,0 +1,7 @@
+# 场景1：基本流水（无 WAR/WAW 冲突）
+# 仅存在 RAW（真数据依赖），展示 Tomasulo 基本流水调度
+l.d   $f0, 0(R1)
+l.d   $f2, 8(R1)
+add.d $f4, $f0, $f2
+l.d   $f6, 16(R1)
+add.d $f8, $f6, $f0
